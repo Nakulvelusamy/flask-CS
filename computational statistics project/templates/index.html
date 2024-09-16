@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCA Visualization</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Principal Component Analysis (PCA) Visualization <br> Computational Statistics (60 MA 013) </h1>
+   
+    
+    <form id="uploadForm">
+        <input type="file" id="fileInput" accept=".csv" required>
+        <select id="numComponents">
+            <option value="2">2 Components</option>
+            <option value="3">3 Components</option>
+        </select>
+        <button type="submit">Upload and Analyze</button>
+    </form>
+    <div class="container">
+        <div class="plot-container" id="pca2dPlotContainer">
+            <canvas id="pca2dPlot"></canvas>
+        </div>
+        <div class="plot-container" id="pca3dPlotContainer">
+            <div id="pca3dPlot"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.138.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.138.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Hide both plot containers initially
+        document.getElementById('pca2dPlotContainer').style.display = 'none';
+        document.getElementById('pca3dPlotContainer').style.display = 'none';
+
+        document.getElementById('uploadForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('fileInput');
+            const numComponents = document.getElementById('numComponents').value;
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('num_components', numComponents);
+
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                // Hide all plots initially
+                document.getElementById('pca2dPlotContainer').style.display = 'none';
+                document.getElementById('pca3dPlotContainer').style.display = 'none';
+
+                // 2D Plot
+                if (numComponents == '2') {
+                    document.getElementById('pca2dPlotContainer').style.display = 'block';
+                    const pca2dData = data.pca_data_2d;
+                    const ctx2d = document.getElementById('pca2dPlot').getContext('2d');
+
+                    // Clear previous plot
+                    ctx2d.clearRect(0, 0, ctx2d.canvas.width, ctx2d.canvas.height);
+
+                    // Generate random colors and sizes for each point
+                    const pointColors = pca2dData.map(() => {
+                        return `rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.6)`;
+                    });
+                    const pointSizes = pca2dData.map((_, index) => 5 + 5 * (index / pca2dData.length)); // Size based on index
+
+                    // Plot the points
+                    new Chart(ctx2d, {
+                        type: 'scatter',
+                        data: {
+                            datasets: [{
+                                label: 'PCA 2D Components',
+                                data: pca2dData.map((item, index) => ({
+                                    x: item[0],
+                                    y: item[1],
+                                    r: pointSizes[index] // Use the size for radius
+                                })),
+                                backgroundColor: pointColors,
+                                pointRadius: pointSizes // Set point sizes
+                            }]
+                        },
+                        options: {
+                            scales: {
+                                x: { type: 'linear', position: 'bottom' },
+                                y: { type: 'linear' }
+                            }
+                        }
+                    });
+                }
+
+                // 3D Plot
+                if (numComponents == '3' && data.pca_data_3d.length > 0) {
+                    document.getElementById('pca3dPlotContainer').style.display = 'block';
+                    const pca3dData = data.pca_data_3d;
+                    const container = document.getElementById('pca3dPlot');
+                    container.innerHTML = ''; // Clear previous plot
+
+                    const width = container.clientWidth;
+                    const height = container.clientHeight;
+
+                    // Scene setup
+                    const scene = new THREE.Scene();
+                    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+                    const renderer = new THREE.WebGLRenderer();
+                    renderer.setSize(width, height);
+                    container.appendChild(renderer.domElement);
+
+                    // Add lighting
+                    const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+                    const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+                    pointLight.position.set(10, 10, 10);
+                    scene.add(ambientLight);
+                    scene.add(pointLight);
+
+                    // Add points with varying colors and sizes
+                    const geometry = new THREE.BufferGeometry();
+                    const positions = new Float32Array(pca3dData.flat());
+                    const colors = new Float32Array(pca3dData.length * 3); // RGB colors
+                    const sizes = new Float32Array(pca3dData.length); // Sizes of the points
+
+                    // Generate random colors and sizes for each point
+                    for (let i = 0; i < pca3dData.length; i++) {
+                        colors[i * 3] = Math.random(); // Red
+                        colors[i * 3 + 1] = Math.random(); // Green
+                        colors[i * 3 + 2] = Math.random(); // Blue
+                        sizes[i] = 2 + 5 * (i / pca3dData.length); // Size based on index
+                    }
+
+                    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+                    const material = new THREE.PointsMaterial({
+                        size: 1, // Default size
+                        vertexColors: true,
+                    });
+                    const points = new THREE.Points(geometry, material);
+                    scene.add(points);
+
+                    // Add labels
+                    const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']; // Sample labels; replace with actual data labels
+                    labels.forEach((label, index) => {
+                        if (index < pca3dData.length) { // Ensure label index is within data length
+                            const sprite = createLabelSprite(label);
+                            sprite.position.set(pca3dData[index][0], pca3dData[index][1], pca3dData[index][2]);
+                            scene.add(sprite);
+                        }
+                    });
+
+                    // Add OrbitControls
+                    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+                    controls.enableDamping = true;
+                    controls.dampingFactor = 0.25;
+                    controls.enableZoom = true;
+
+                    camera.position.z = 5;
+
+                    function animate() {
+                        requestAnimationFrame(animate);
+
+                        // Rotation Animation
+                        scene.rotation.y += 0.01;
+
+                        // Pulsing Points Animation
+                        points.scale.set(
+                            1 + 0.05 * Math.sin(Date.now() * 0.005),
+                            1 + 0.05 * Math.sin(Date.now() * 0.005),
+                            1 + 0.05 * Math.sin(Date.now() * 0.005)
+                        );
+
+                        controls.update(); // required if controls.enableDamping or controls.autoRotate are set to true
+                        renderer.render(scene, camera);
+                    }
+                    animate();
+
+                    // Create label sprite
+                    function createLabelSprite(text) {
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        context.font = '24px Arial';
+                        context.fillStyle = 'white';
+                        context.fillText(text, 0, 24);
+                        const texture = new THREE.CanvasTexture(canvas);
+                        const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+                        const sprite = new THREE.Sprite(spriteMaterial);
+                        sprite.scale.set(1, 0.5, 1); // Adjust the size of the sprite
+                        return sprite;
+                    }
+                } else if (numComponents == '3') {
+                    document.getElementById('pca3dPlot').innerHTML = '<p>No 3D data available.</p>';
+                }
+            } else {
+                document.getElementById('result').innerHTML = `<p>Error: ${data.error}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
